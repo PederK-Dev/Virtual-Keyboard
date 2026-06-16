@@ -1,4 +1,6 @@
 import ctypes
+import json
+import os
 import sys
 import tkinter as tk
 from ctypes import wintypes
@@ -28,6 +30,10 @@ user32.IsIconic.argtypes = (wintypes.HWND,)
 user32.IsIconic.restype = wintypes.BOOL
 user32.IsWindow.argtypes = (wintypes.HWND,)
 user32.IsWindow.restype = wintypes.BOOL
+user32.GetWindowLongW.argtypes = (wintypes.HWND, ctypes.c_int)
+user32.GetWindowLongW.restype = wintypes.LONG
+user32.SetWindowLongW.argtypes = (wintypes.HWND, ctypes.c_int, wintypes.LONG)
+user32.SetWindowLongW.restype = wintypes.LONG
 user32.SetFocus.argtypes = (wintypes.HWND,)
 user32.SetFocus.restype = wintypes.HWND
 user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
@@ -163,70 +169,135 @@ def send_ctrl_key(vk_code):
     _check_send_input(sent, len(sequence))
 
 
+THEMES = {
+    "Light": {
+        "bg": "#ffffff",
+        "muted": "#777777",
+        "status": "#999999",
+        "chrome_bg": "#eeeeee",
+        "chrome_fg": "#555555",
+        "chrome_active": "#e0e0e0",
+        "key_bg": "#f2f2f2",
+        "key_fg": "#333333",
+        "key_border": "#d2d2d2",
+        "key_light": "#f7f7f7",
+        "key_active": "#e6e6e6",
+        "key_pressed": "#dadada",
+        "accent": "#d7eaff",
+        "accent_fg": "#111111",
+    },
+    "Dark": {
+        "bg": "#2b2b2b",
+        "muted": "#bbbbbb",
+        "status": "#888888",
+        "chrome_bg": "#3c3f41",
+        "chrome_fg": "#e8e8e8",
+        "chrome_active": "#4a4d4f",
+        "key_bg": "#3c3f41",
+        "key_fg": "#e8e8e8",
+        "key_border": "#555555",
+        "key_light": "#454749",
+        "key_active": "#4a4d4f",
+        "key_pressed": "#565a5c",
+        "accent": "#37506e",
+        "accent_fg": "#ffffff",
+    },
+}
+
+LANGUAGES = {
+    "Norsk": [
+        "og", "jeg", "det", "du", "er", "ikke", "til", "med", "for", "som",
+        "hei", "takk", "ja", "nei", "kan", "skrive", "norsk", "keyboard",
+        "virtual", "klikke", "ord", "hvor", "når", "hva", "bra", "veldig",
+    ],
+    "English": [
+        "the", "and", "you", "that", "was", "for", "are", "with", "have",
+        "this", "from", "they", "what", "hello", "thanks", "yes", "no",
+        "can", "write", "keyboard", "virtual", "click", "word", "where",
+        "when", "good",
+    ],
+}
+
+
 class VirtualKeyboard(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Virtual Keyboard")
         self.geometry("560x285")
         self.minsize(520, 245)
-        self.configure(bg="#ffffff")
         self.attributes("-topmost", True)
         # Remove the native OS title bar so the keyboard has a single, clearly
         # styled Exit button instead of the OS close button plus a custom one.
         self.overrideredirect(True)
         self._drag_offset = (0, 0)
 
+        settings = self._load_settings()
+        self.theme_name = settings.get("theme", "Light")
+        if self.theme_name not in THEMES:
+            self.theme_name = "Light"
+        self.language = settings.get("language", "Norsk")
+        if self.language not in LANGUAGES:
+            self.language = "Norsk"
+
         self.caps = False
         self.symbols_visible = False
-        self.always_on_top = tk.BooleanVar(value=True)
+        self.settings_visible = False
+        self.always_on_top = tk.BooleanVar(value=settings.get("always_on_top", True))
         self.current_word = ""
         self.status_text = tk.StringVar(value="Click where text should go, then use the keys")
         self.key_buttons = {}
         self.last_target_hwnd = None
+        self.common_words = LANGUAGES[self.language]
 
-        self.common_words = [
-            "og",
-            "jeg",
-            "det",
-            "du",
-            "er",
-            "ikke",
-            "til",
-            "med",
-            "for",
-            "som",
-            "hei",
-            "takk",
-            "ja",
-            "nei",
-            "kan",
-            "skrive",
-            "norsk",
-            "keyboard",
-            "virtual",
-            "klikke",
-            "ord",
-            "hvor",
-            "når",
-            "hva",
-            "bra",
-            "veldig",
-        ]
+        self.configure(bg=self.palette["bg"])
 
         self.taskbar_anchor = None
         self._anchor_ready = False
 
         self._build_styles()
         self._build_ui()
+        self._apply_theme()
         self._create_taskbar_anchor()
         self.after(200, self._make_no_activate)
         self.after(250, self._track_target_window)
 
+    @property
+    def palette(self):
+        return THEMES[self.theme_name]
+
+    def _settings_path(self):
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+
+    def _load_settings(self):
+        try:
+            with open(self._settings_path(), encoding="utf-8") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _save_settings(self):
+        data = {
+            "theme": self.theme_name,
+            "language": self.language,
+            "always_on_top": bool(self.always_on_top.get()),
+        }
+        try:
+            with open(self._settings_path(), "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2)
+        except OSError:
+            pass
+
     def _build_styles(self):
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure("Root.TFrame", background="#ffffff")
-        style.configure("Keyboard.TFrame", background="#ffffff")
+        self._style = ttk.Style(self)
+        self._style.theme_use("clam")
+        self._configure_styles()
+
+    def _configure_styles(self):
+        style = self._style
+        palette = self.palette
+        style.configure("Root.TFrame", background=palette["bg"])
+        style.configure("Keyboard.TFrame", background=palette["bg"])
         style.configure("Key.TButton", font=("Segoe UI", 10), padding=(7, 5))
         style.configure("Wide.TButton", font=("Segoe UI", 10), padding=(7, 5))
         style.configure("Word.TButton", font=("Segoe UI", 9), padding=(8, 4))
@@ -234,56 +305,63 @@ class VirtualKeyboard(tk.Tk):
             "Caps.TButton",
             font=("Segoe UI", 10, "bold"),
             padding=(7, 5),
-            foreground="#111111",
-            background="#d7eaff",
+            foreground=palette["accent_fg"],
+            background=palette["accent"],
+            bordercolor=palette["key_border"],
+            lightcolor=palette["accent"],
+            darkcolor=palette["key_border"],
+            relief=tk.FLAT,
+        )
+        style.map(
+            "Caps.TButton",
+            background=[("active", palette["accent"]), ("pressed", palette["accent"])],
         )
         for button_style in ("Key.TButton", "Wide.TButton", "Word.TButton"):
             style.configure(
                 button_style,
-                foreground="#333333",
-                background="#f2f2f2",
-                bordercolor="#d2d2d2",
-                lightcolor="#f7f7f7",
-                darkcolor="#d2d2d2",
+                foreground=palette["key_fg"],
+                background=palette["key_bg"],
+                bordercolor=palette["key_border"],
+                lightcolor=palette["key_light"],
+                darkcolor=palette["key_border"],
                 relief=tk.FLAT,
             )
             style.map(
                 button_style,
-                background=[("active", "#e6e6e6"), ("pressed", "#dadada")],
+                background=[
+                    ("active", palette["key_active"]),
+                    ("pressed", palette["key_pressed"]),
+                ],
             )
 
     def _build_ui(self):
         root = ttk.Frame(self, style="Root.TFrame", padding=8)
         root.pack(fill=tk.BOTH, expand=True)
 
-        top_bar = ttk.Frame(root, style="Root.TFrame")
-        top_bar.pack(fill=tk.X, pady=(0, 4))
+        self.top_bar = ttk.Frame(root, style="Root.TFrame")
+        self.top_bar.pack(fill=tk.X, pady=(0, 4))
 
-        title = tk.Label(
-            top_bar,
-            text="Norsk",
-            bg="#ffffff",
-            fg="#777777",
+        self.title_label = tk.Label(
+            self.top_bar,
+            text=self.language,
             font=("Segoe UI", 10),
         )
-        title.pack(side=tk.LEFT)
+        self.title_label.pack(side=tk.LEFT)
 
-        status = tk.Label(
-            top_bar,
+        self.status_label = tk.Label(
+            self.top_bar,
             textvariable=self.status_text,
-            bg="#ffffff",
-            fg="#999999",
             font=("Segoe UI", 8),
         )
-        status.pack(side=tk.LEFT, padx=(8, 0))
+        self.status_label.pack(side=tk.LEFT, padx=(8, 0))
 
         # No OS title bar anymore, so let the user drag the window by the top bar.
-        for widget in (top_bar, title, status):
+        for widget in (self.top_bar, self.title_label, self.status_label):
             widget.bind("<Button-1>", self._start_move)
             widget.bind("<B1-Motion>", self._on_move)
 
-        exit_button = tk.Button(
-            top_bar,
+        self.exit_button = tk.Button(
+            self.top_bar,
             text="✕ Exit",
             command=self.destroy,
             bg="#e53935",
@@ -295,28 +373,45 @@ class VirtualKeyboard(tk.Tk):
             font=("Segoe UI", 10, "bold"),
             padx=10,
         )
-        exit_button.pack(side=tk.RIGHT, padx=(6, 0))
+        self.exit_button.pack(side=tk.RIGHT, padx=(6, 0))
 
-        clear_button = tk.Button(
-            top_bar,
+        self.clear_button = tk.Button(
+            self.top_bar,
             text="Clear",
             command=self._clear_text,
-            bg="#eeeeee",
-            fg="#555555",
-            activebackground="#e0e0e0",
-            activeforeground="#333333",
             borderwidth=0,
             highlightthickness=0,
             font=("Segoe UI", 10),
             padx=10,
         )
-        clear_button.pack(side=tk.RIGHT)
+        self.clear_button.pack(side=tk.RIGHT, padx=(6, 0))
 
-        self.suggestions = ttk.Frame(root, style="Root.TFrame")
+        self.settings_button = tk.Button(
+            self.top_bar,
+            text="⚙",
+            command=self._toggle_settings,
+            borderwidth=0,
+            highlightthickness=0,
+            font=("Segoe UI", 12),
+            padx=8,
+        )
+        self.settings_button.pack(side=tk.RIGHT, padx=(6, 0))
+
+        self.body = ttk.Frame(root, style="Root.TFrame")
+        self.body.pack(fill=tk.BOTH, expand=True)
+
+        self.main_view = ttk.Frame(self.body, style="Root.TFrame")
+        self.settings_view = ttk.Frame(self.body, style="Root.TFrame")
+        self._build_main_view(self.main_view)
+        self._build_settings_panel(self.settings_view)
+        self.main_view.pack(fill=tk.BOTH, expand=True)
+
+    def _build_main_view(self, parent):
+        self.suggestions = ttk.Frame(parent, style="Root.TFrame")
         self.suggestions.pack(fill=tk.X, pady=(0, 4))
         self._refresh_suggestions()
 
-        keyboard = ttk.Frame(root, style="Keyboard.TFrame")
+        keyboard = ttk.Frame(parent, style="Keyboard.TFrame")
         keyboard.pack(fill=tk.BOTH, expand=True)
 
         rows = [
@@ -342,6 +437,144 @@ class VirtualKeyboard(tk.Tk):
                 button.grid(row=0, column=column, sticky="nsew", padx=2)
                 self.key_buttons.setdefault(item, []).append(button)
             frame.rowconfigure(0, weight=1)
+
+    def _build_settings_panel(self, parent):
+        self._settings_labels = []
+
+        header = tk.Label(parent, text="Settings", font=("Segoe UI", 12, "bold"))
+        header.pack(anchor=tk.W, pady=(0, 8))
+        self._settings_labels.append(header)
+
+        self._theme_buttons = self._build_option_row(
+            parent, "Theme", list(THEMES.keys()), self._set_theme
+        )
+        self._lang_buttons = self._build_option_row(
+            parent, "Language", list(LANGUAGES.keys()), self._set_language
+        )
+        self._aot_buttons = self._build_option_row(
+            parent, "Always on top", ["On", "Off"], self._set_always_on_top
+        )
+
+        self._settings_back = tk.Button(
+            parent,
+            text="← Back to keyboard",
+            command=self._hide_settings,
+            borderwidth=0,
+            highlightthickness=0,
+            font=("Segoe UI", 10),
+            padx=10,
+            pady=4,
+        )
+        self._settings_back.pack(anchor=tk.W, pady=(14, 0))
+
+    def _build_option_row(self, parent, label, options, command):
+        row = ttk.Frame(parent, style="Root.TFrame")
+        row.pack(fill=tk.X, pady=4)
+
+        caption = tk.Label(row, text=label, font=("Segoe UI", 10), width=14, anchor=tk.W)
+        caption.pack(side=tk.LEFT)
+        self._settings_labels.append(caption)
+
+        buttons = {}
+        for option in options:
+            button = tk.Button(
+                row,
+                text=option,
+                command=lambda value=option: command(value),
+                borderwidth=0,
+                highlightthickness=0,
+                font=("Segoe UI", 10),
+                padx=16,
+                pady=4,
+            )
+            button.pack(side=tk.LEFT, padx=(0, 6))
+            buttons[option] = button
+        return buttons
+
+    def _toggle_settings(self):
+        if self.settings_visible:
+            self._hide_settings()
+        else:
+            self._show_settings()
+
+    def _show_settings(self):
+        self.settings_visible = True
+        self.main_view.pack_forget()
+        self.settings_view.pack(fill=tk.BOTH, expand=True)
+        self._refresh_settings_highlights()
+
+    def _hide_settings(self):
+        self.settings_visible = False
+        self.settings_view.pack_forget()
+        self.main_view.pack(fill=tk.BOTH, expand=True)
+
+    def _set_theme(self, name):
+        if name not in THEMES:
+            return
+        self.theme_name = name
+        self._apply_theme()
+        self._save_settings()
+
+    def _set_language(self, name):
+        if name not in LANGUAGES:
+            return
+        self.language = name
+        self.common_words = LANGUAGES[name]
+        self.current_word = ""
+        self.title_label.config(text=name)
+        self._refresh_suggestions()
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_always_on_top(self, choice):
+        self.always_on_top.set(choice == "On")
+        self._toggle_topmost()
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _color_chrome_button(self, button):
+        palette = self.palette
+        button.config(
+            bg=palette["chrome_bg"],
+            fg=palette["chrome_fg"],
+            activebackground=palette["chrome_active"],
+            activeforeground=palette["chrome_fg"],
+        )
+
+    def _highlight(self, buttons, active):
+        palette = self.palette
+        for option, button in buttons.items():
+            if option == active:
+                button.config(
+                    bg=palette["accent"],
+                    fg=palette["accent_fg"],
+                    activebackground=palette["accent"],
+                    activeforeground=palette["accent_fg"],
+                )
+            else:
+                self._color_chrome_button(button)
+
+    def _refresh_settings_highlights(self):
+        self._highlight(self._theme_buttons, self.theme_name)
+        self._highlight(self._lang_buttons, self.language)
+        self._highlight(self._aot_buttons, "On" if self.always_on_top.get() else "Off")
+
+    def _apply_theme(self):
+        palette = self.palette
+        self._configure_styles()
+        self.configure(bg=palette["bg"])
+
+        self.title_label.config(bg=palette["bg"], fg=palette["muted"])
+        self.status_label.config(bg=palette["bg"], fg=palette["status"])
+        self._color_chrome_button(self.clear_button)
+        self._color_chrome_button(self.settings_button)
+
+        for label in self._settings_labels:
+            label.config(bg=palette["bg"], fg=palette["muted"])
+        self._color_chrome_button(self._settings_back)
+
+        self._refresh_settings_highlights()
+        self._refresh_suggestions()
 
     def _key_label(self, key):
         labels = {
@@ -390,9 +623,11 @@ class VirtualKeyboard(tk.Tk):
         anchor.title("Virtual Keyboard")
         anchor.geometry("1x1-2000-2000")
         anchor.attributes("-alpha", 0.0)
+        # Keep it unmapped until the taskbar style is applied so we never have
+        # to re-show it with ctypes (ShowWindow dispatches window messages while
+        # the GIL is released, which crashes the interpreter).
+        anchor.withdraw()
         anchor.protocol("WM_DELETE_WINDOW", self.destroy)
-        anchor.bind("<Unmap>", self._on_anchor_unmap)
-        anchor.bind("<Map>", self._on_anchor_map)
         self.taskbar_anchor = anchor
         self.after(150, self._mark_anchor_as_taskbar)
 
@@ -406,9 +641,17 @@ class VirtualKeyboard(tk.Tk):
         style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-        # Re-show so Windows re-evaluates the taskbar flag.
-        user32.ShowWindow(hwnd, SW_HIDE)
-        user32.ShowWindow(hwnd, SW_SHOW)
+        # Map it via Tk (GIL-safe) so Windows shows the taskbar button.
+        self.taskbar_anchor.deiconify()
+        self.after(100, self._enable_anchor_mirroring)
+
+    def _enable_anchor_mirroring(self):
+        # Bind only after the initial map so the startup map/unmap events don't
+        # bounce the keyboard around.
+        if not self.taskbar_anchor:
+            return
+        self.taskbar_anchor.bind("<Unmap>", self._on_anchor_unmap)
+        self.taskbar_anchor.bind("<Map>", self._on_anchor_map)
         self._anchor_ready = True
 
     def _on_anchor_unmap(self, _event):
@@ -424,12 +667,17 @@ class VirtualKeyboard(tk.Tk):
 
     def _make_no_activate(self):
         hwnd = self._root_hwnd()
+        topmost = self.always_on_top.get()
         current_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        new_style = current_style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST
+        new_style = current_style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+        if topmost:
+            new_style |= WS_EX_TOPMOST
+        else:
+            new_style &= ~WS_EX_TOPMOST
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
         user32.SetWindowPos(
             hwnd,
-            HWND_TOPMOST,
+            HWND_TOPMOST if topmost else HWND_NOTOPMOST,
             0,
             0,
             0,
