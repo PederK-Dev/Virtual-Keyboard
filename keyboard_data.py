@@ -6,24 +6,24 @@ without touching the Tk code.
 
 THEMES = {
     "Light": {
-        "bg": "#ffffff",
-        "muted": "#777777",
-        "status": "#999999",
-        "chrome_bg": "#eeeeee",
-        "chrome_fg": "#555555",
-        "chrome_active": "#e0e0e0",
-        "key_bg": "#f2f2f2",
-        "key_fg": "#333333",
-        "key_border": "#d2d2d2",
-        "key_light": "#f7f7f7",
-        "key_active": "#e6e6e6",
-        "key_pressed": "#dadada",
-        "accent": "#d7eaff",
-        "accent_fg": "#111111",
-        "card": "#eef1f5",
-        "chip": "#eef2f7",
-        "chip_hover": "#d7eaff",
-        "chip_fg": "#333333",
+        "bg": "#e4e8ec",
+        "muted": "#4f5964",
+        "status": "#66717d",
+        "chrome_bg": "#d3d9df",
+        "chrome_fg": "#29323b",
+        "chrome_active": "#c4cbd3",
+        "key_bg": "#f4f6f8",
+        "key_fg": "#1f2933",
+        "key_border": "#aeb8c2",
+        "key_light": "#ffffff",
+        "key_active": "#dce5ee",
+        "key_pressed": "#cbd7e2",
+        "accent": "#b9d7f2",
+        "accent_fg": "#142638",
+        "card": "#d8dde3",
+        "chip": "#f0f3f6",
+        "chip_hover": "#cfe0f0",
+        "chip_fg": "#25313d",
     },
     "Dark": {
         "bg": "#2b2b2b",
@@ -83,6 +83,26 @@ LANGUAGES = {
         "can", "write", "keyboard", "virtual", "click", "word", "where",
         "when", "good",
     ],
+    "Español": [
+        "el", "la", "de", "que", "y", "en", "los", "se", "las", "por",
+        "un", "para", "con", "no", "una", "su", "hola", "gracias", "sí",
+        "escribir", "teclado", "virtual", "clic", "palabra", "dónde", "bueno",
+    ],
+    "Français": [
+        "le", "la", "de", "et", "les", "des", "un", "une", "à", "en",
+        "que", "pour", "bonjour", "merci", "oui", "non", "écrire", "clavier",
+        "virtuel", "cliquer", "mot", "où", "quand", "bon", "très",
+    ],
+    "Deutsch": [
+        "der", "die", "und", "den", "von", "zu", "das", "mit", "ist", "für",
+        "hallo", "danke", "ja", "nein", "schreiben", "tastatur", "virtuell",
+        "klicken", "wort", "wo", "wann", "gut", "sehr", "auf", "nicht",
+    ],
+    "Italiano": [
+        "il", "la", "di", "che", "e", "la", "un", "una", "per", "con",
+        "ciao", "grazie", "sì", "no", "scrivere", "tastiera", "virtuale",
+        "cliccare", "parola", "dove", "quando", "buono", "molto", "non", "sono",
+    ],
 }
 
 # Both languages share ONE layout. Only three keys differ: in Norsk they are the
@@ -117,6 +137,28 @@ LAYOUTS = {
         "rows": _rows("[", "]", ";"),
         "shift": {**_BASE_SHIFT, "[": "{", "]": "}", ";": ":"},
     },
+    "Español": {
+        # Spanish uses the same layout as English plus ñ; we put ñ where
+        # Norsk has æ, and the other two slots stay as symbols.
+        "rows": _rows("[", "]", "ñ"),
+        "shift": {**_BASE_SHIFT, "[": "{", "]": "}", "ñ": "Ñ"},
+    },
+    "Français": {
+        # French: à and è are common; we place them where Norsk has å/ø.
+        "rows": _rows("à", "è", ";"),
+        "shift": {**_BASE_SHIFT, "à": "À", "è": "È", ";": ":"},
+    },
+    "Deutsch": {
+        # German: ä, ö, ü are the umlauts; we place ä/ö where Norsk has å/ø.
+        "rows": _rows("ä", "ö", ";"),
+        "shift": {**_BASE_SHIFT, "ä": "Ä", "ö": "Ö", ";": ":"},
+    },
+    "Italiano": {
+        # Italian uses the same layout as English (no special letters needed
+        # beyond accented vowels which can be typed via Symbols/Alt).
+        "rows": _rows("[", "]", ";"),
+        "shift": {**_BASE_SHIFT, "[": "{", "]": "}", ";": ":"},
+    },
 }
 
 # Extra symbols shown in the suggestion strip via the Symbols toggle.
@@ -130,14 +172,14 @@ SPECIAL_LABELS = {
     "Backspace": "⌫",
     "Del": "⌦",
     "Caps": "Caps",
-    "ShiftLeft": "⇧",
-    "ShiftRight": "⇧",
+    "ShiftLeft": "Shift",
+    "ShiftRight": "Shift",
     "Home": "Home",
     "End": "End",
     "Symbols": "@#&",
     "AI": "✨ AI",
     "Enter": "Enter",
-    "Tab": "⇥",
+    "Tab": "Tab",
     "Left": "←",
     "Up": "↑",
     "Down": "↓",

@@ -1,5 +1,46 @@
 """Pure word-suggestion logic, independent of Tk and Win32 so it can be tested."""
 
+import re
+
+
+# A word is considered "real" (worth learning / suggesting) if it doesn't look
+# like keyboard mash. We reject words with excessive repeated characters or
+# very long runs of the same letter — e.g. "tttyyyi", "aaaaah", "bbnnmmm".
+# Tunable: max consecutive identical letters allowed.
+_MAX_REPEAT = 3
+
+
+def looks_like_word(word):
+    """Return True if ``word`` plausibly is a real word, not keyboard mash.
+
+    Checks:
+    - At least 2 characters, all alphabetic.
+    - No run of the same letter longer than ``_MAX_REPEAT`` (rejects "tttyyyi",
+      "bbbbby", etc.). A 4+ run of any letter is almost never a real word.
+    - Not too many repeated characters overall (rejects "bbnnmmmuyutt" where
+      repeats are frequent even though no single run exceeds the limit).
+    - Must contain at least one vowel (a, e, i, o, u, y) — real words almost
+      always do; mash like "hgg", "bbnn" doesn't.
+    """
+    if not word or len(word) < 2 or not word.isalpha():
+        return False
+    lower = word.lower()
+    # Reject long runs of the same letter: "tttyyyi" has "yyy" (ok) but
+    # "aaaaah" has "aaaa" (rejected). We allow up to _MAX_REPEAT in a row.
+    if re.search(r"(.)\1{" + str(_MAX_REPEAT) + r",}", lower):
+        return False
+    # Reject words with too many repeated characters. For short words (<=6)
+    # more than half is junk; for longer words a third is already suspicious.
+    repeats = sum(1 for i in range(1, len(word)) if word[i] == word[i - 1])
+    threshold = len(word) / 2 if len(word) <= 6 else len(word) / 3
+    if repeats > threshold:
+        return False
+    # Must contain at least one vowel — catches consonant-only mash like
+    # "hgg", "bbnn", "jho" (no vowel). "y" counts as a vowel here.
+    if not any(c in "aeiouy" for c in lower):
+        return False
+    return True
+
 
 def matching_words(words, current, limit=6):
     """Return up to ``limit`` suggestions for the word being typed.
@@ -32,6 +73,10 @@ def rank_words(words, frequencies, current, limit=6):
         if lower in seen:
             continue
         if current and not lower.startswith(lowered):
+            continue
+        # Skip learned "words" that look like keyboard mash (e.g. "tttyyyi")
+        # so junk that slipped into learned_words.json never reaches the bar.
+        if not looks_like_word(word):
             continue
         seen.add(lower)
         candidates.append(word)

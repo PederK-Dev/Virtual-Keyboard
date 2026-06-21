@@ -1,0 +1,9 @@
+# Local AI credentials — never commit
+ai_keys.json
+
+# Personal learned-words dictionary
+learned_words.json
+
+# Python cache
+__pycache__/
+*.pyc

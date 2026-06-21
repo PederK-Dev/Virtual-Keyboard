@@ -6,7 +6,11 @@ suggested word to finish the word you started.
 
 Built with **Python and Tkinter**, using the Windows **SendInput** API — no third-party packages required.
 
-![Virtual Keyboard](./screenshots/keyboard.jpg)
+## Screenshots
+
+| Light theme | Dark theme |
+| --- | --- |
+| ![Virtual Keyboard light theme](./screenshots/keyboard_light.jpg) | ![Virtual Keyboard dark theme](./screenshots/keyboard_dark.jpg) |
 
 ## Run
 
@@ -32,7 +36,8 @@ You can also double-click `run.bat`.
   to go back
 - **Word suggestions** that insert the rest of the word plus a trailing space
 - **Clear** button: selects all and clears the focused text field
-- **AI** key: placeholder for a future AI assistant
+- **AI** key: fix, rewrite, formalize, continue, or translate text using an
+  OpenAI-compatible provider
 - Custom title bar with a clearly marked red **Exit** button, draggable anywhere
   along the top bar
 - **Taskbar icon** via a lightweight helper window, while the keyboard itself stays
@@ -60,16 +65,49 @@ Click the **⚙** button in the top bar to open the scrollable settings panel:
 - **Learn Words** — remember the words you use most and rank them first
   (stored locally in `learned_words.json`)
 
-**Language**
-- **Language** — Norsk or English (also via the `🌐 … ▾` button, top-left)
-
 **Accessibility**
 - **Key Repeat Speed** — Slow / Normal / Fast (for held Backspace/arrows)
 - **High Contrast** — black/white/yellow palette for visibility
-- **Sound on Key Press** — play a click on each key (off by default)
+- **Key Sound** — Off / Clicky (bright blue-switch) / Tactile (soft brown-switch)
 
 **AI**
 - **Show AI Button** — hide or show the AI key
+- **Enable AI Features** — turn the AI key on/off
+- **AI Provider** — LM Studio (local) / OpenRouter / Other
+- **Pin Language** — choose a preferred AI translation language, or Off
+
+## AI key
+
+With **Enable AI Features** on, the **✨ AI** key opens an action menu in the
+suggestion strip: **Fix / Rewrite / Formal / Continue / Translate**. Picking one
+selects the focused field's text (Ctrl+A), sends it to your chosen provider, and
+types the result back into that same field. If you switch windows while the AI is
+working, the result waits until you return to the original field. The complete
+Windows clipboard, including images, files, and formatted content, is restored
+before the network request begins.
+
+All providers use the OpenAI-compatible `/v1/chat/completions` API (no extra
+Python packages — uses `urllib`).
+
+**Setting credentials (recommended):** Settings → AI → **Edit credentials…**
+opens a dialog (per provider) where you enter the **Base URL**, **API key**, and
+**Model**. Click **Fetch** to pull the available models from the endpoint's
+`/v1/models` and pick one. Credentials are encrypted for the current Windows user
+with DPAPI and saved to a gitignored `ai_keys.json`; no restart is needed. Existing
+plaintext credential files are migrated automatically.
+
+**Or via environment variables** (used as a fallback when the dialog fields are
+blank):
+
+| Provider | Base URL (default) | Key env var | Model env var (default) |
+| --- | --- | --- | --- |
+| LM Studio | `LMSTUDIO_BASE_URL` (`http://localhost:1234/v1`) | `LMSTUDIO_API_KEY` (optional) | `LMSTUDIO_MODEL` (`local-model`) |
+| OpenRouter | `OPENROUTER_BASE_URL` (`https://openrouter.ai/api/v1`) | `OPENROUTER_API_KEY` | `OPENROUTER_MODEL` (`openai/gpt-4o-mini`) |
+| OpenCode | `OPENCODE_BASE_URL` (`http://localhost:4096/v1`) | `OPENCODE_API_KEY` | `OPENCODE_MODEL` |
+| Other | `AI_BASE_URL` | `AI_API_KEY` | `AI_MODEL` |
+
+For LM Studio, start its local server and load a model. For OpenRouter, set the
+API key. For OpenCode, point the Base URL at its OpenAI-compatible server.
 
 All choices — plus the window position — are saved to `settings.json` next to
 `app.py` and restored on the next launch.

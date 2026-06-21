@@ -1,7 +1,8 @@
 {
   "theme": "Dark",
   "high_contrast": false,
-  "language": "English",
+  "language": "Norsk",
+  "ai_pinned_language": "Norwegian",
   "scale": "Normal",
   "always_on_top": false,
   "remember_position": true,
@@ -10,9 +11,13 @@
   "auto_space": true,
   "learn_words": true,
   "repeat_speed": "Normal",
-  "key_animation": false,
-  "sound": true,
+  "key_animation": true,
+  "sound": "Clicky",
   "show_ai": true,
-  "x": 2799,
-  "y": 767
+  "ai_enabled": true,
+  "ai_provider": "LM Studio",
+  "ai_translate_pinned": "On",
+  "ai_translate_language": "English",
+  "x": 3113,
+  "y": 780
 }
