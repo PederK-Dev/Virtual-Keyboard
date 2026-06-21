@@ -12,6 +12,15 @@ Built with **Python and Tkinter**, using the Windows **SendInput** API — no th
 | --- | --- |
 | ![Virtual Keyboard light theme](./screenshots/keyboard_light.jpg) | ![Virtual Keyboard dark theme](./screenshots/keyboard_dark.jpg) |
 
+## Download
+
+Download `VirtualKeyboard.exe` from the
+[Releases page](https://github.com/PederK-Dev/Virtual-Keyboard/releases). It is a
+portable Windows application: no Python installation is required.
+
+The executable is currently unsigned, so Windows SmartScreen may show a warning
+the first time it runs. Code signing can remove that warning in a future release.
+
 ## Run
 
 ```powershell
@@ -19,6 +28,33 @@ python app.py
 ```
 
 You can also double-click `run.bat`.
+
+## Build a Windows executable
+
+Install the build dependency and run the build script:
+
+```powershell
+python -m pip install -r requirements-build.txt
+./build.ps1
+```
+
+The portable executable will be created at `dist/VirtualKeyboard.exe`.
+
+## Publish a release
+
+The `Build Windows app` GitHub Actions workflow supports two release paths:
+
+1. Run it manually from **Actions → Build Windows app → Run workflow**. The
+   resulting `VirtualKeyboard-Windows` artifact can be downloaded from that run.
+2. Push a version tag to create a permanent GitHub Release automatically:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+After the workflow finishes, `VirtualKeyboard.exe` will appear under
+**Releases → v1.0.0 → Assets**.
 
 ## Features
 
@@ -109,18 +145,21 @@ blank):
 For LM Studio, start its local server and load a model. For OpenRouter, set the
 API key. For OpenCode, point the Base URL at its OpenAI-compatible server.
 
-All choices — plus the window position — are saved to `settings.json` next to
-`app.py` and restored on the next launch.
+When running from source, settings remain beside `app.py`. In the packaged app,
+settings, learned words, and encrypted AI credentials are stored under
+`%APPDATA%\VirtualKeyboard` and restored on the next launch.
 
 ## Project structure
 
 | File | Purpose |
 | --- | --- |
 | `app.py` | Tkinter UI and Windows window management |
+| `app_paths.py` | Persistent storage locations for source and packaged builds |
 | `winapi.py` | `ctypes`/Win32 plumbing: `SendInput`, constants, DPI awareness |
 | `keyboard_data.py` | Themes, layouts, Shift maps, languages, symbols, labels |
 | `text_logic.py` | Pure word-suggestion logic (no Tk/Win32 dependencies) |
-| `tests/` | Unit tests for `text_logic` |
+| `build.ps1` | Builds the portable executable with PyInstaller |
+| `tests/` | Unit tests for text logic, data, packaging paths, and Windows safety |
 
 ## Tests
 
@@ -128,8 +167,9 @@ All choices — plus the window position — are saved to `settings.json` next t
 python -m unittest discover -s tests
 ```
 
-These pure-logic and data tests (no Tk/Win32 needed) also run automatically on
-every push via GitHub Actions (`.github/workflows/tests.yml`).
+Cross-platform tests run everywhere; Windows API safety tests run on Windows and
+skip on other operating systems. The release workflow runs the complete suite on
+Windows before building the executable.
 
 ## Notes
 

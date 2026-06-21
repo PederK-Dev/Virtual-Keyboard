@@ -6,6 +6,9 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+if sys.platform != "win32":
+    raise unittest.SkipTest("Windows API safety tests require Windows")
+
 import winapi as win
 from app import (
     VirtualKeyboard,

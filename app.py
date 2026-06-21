@@ -24,6 +24,7 @@ from tkinter import font as tkfont
 from tkinter import ttk
 
 import winapi as win
+from app_paths import user_data_directory
 from keyboard_data import (
     HIGH_CONTRAST,
     LANGUAGES,
@@ -383,6 +384,7 @@ class VirtualKeyboard(tk.Tk):
         # styled Exit button instead of the OS close button plus a custom one.
         self.overrideredirect(True)
         self._drag_offset = (0, 0)
+        self._data_directory = user_data_directory(__file__)
 
         s = self._load_settings()
         self.theme_name = s["theme"] if s["theme"] in THEMES else "Light"
@@ -471,7 +473,7 @@ class VirtualKeyboard(tk.Tk):
 
     # ------------------------------------------------------------------ settings
     def _settings_path(self):
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+        return os.path.join(self._data_directory, "settings.json")
 
     def _load_settings(self):
         merged = dict(DEFAULTS)
@@ -528,7 +530,7 @@ class VirtualKeyboard(tk.Tk):
             pass
 
     def _ai_keys_path(self):
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_keys.json")
+        return os.path.join(self._data_directory, "ai_keys.json")
 
     def _load_ai_keys(self):
         try:
@@ -570,7 +572,7 @@ class VirtualKeyboard(tk.Tk):
         return cfg
 
     def _freq_path(self):
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "learned_words.json")
+        return os.path.join(self._data_directory, "learned_words.json")
 
     def _load_word_freq(self):
         try:
