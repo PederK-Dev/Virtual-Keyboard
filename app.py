@@ -24,7 +24,7 @@ from tkinter import font as tkfont
 from tkinter import ttk
 
 import winapi as win
-from app_paths import user_data_directory
+from app_paths import bundled_resource, user_data_directory
 from keyboard_data import (
     HIGH_CONTRAST,
     LANGUAGES,
@@ -379,6 +379,13 @@ class VirtualKeyboard(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Virtual Keyboard")
+        self._icon_path = bundled_resource(
+            __file__, os.path.join("assets", "VirtualKeyboard.ico")
+        )
+        try:
+            self.iconbitmap(self._icon_path)
+        except tk.TclError:
+            pass
         self.attributes("-topmost", True)
         # Remove the native OS title bar so the keyboard has a single, clearly
         # styled Exit button instead of the OS close button plus a custom one.
@@ -1345,6 +1352,10 @@ class VirtualKeyboard(tk.Tk):
         # button instead; minimising/closing it is mirrored to the keyboard.
         anchor = tk.Toplevel(self)
         anchor.title("Virtual Keyboard")
+        try:
+            anchor.iconbitmap(self._icon_path)
+        except tk.TclError:
+            pass
         anchor.geometry("1x1-2000-2000")
         anchor.attributes("-alpha", 0.0)
         anchor.withdraw()
