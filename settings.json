@@ -1,5 +1,18 @@
 {
   "theme": "Dark",
-  "language": "Norsk",
-  "always_on_top": true
+  "high_contrast": false,
+  "language": "English",
+  "scale": "Normal",
+  "always_on_top": false,
+  "remember_position": true,
+  "suggestions_enabled": true,
+  "suggestion_count": 6,
+  "auto_space": true,
+  "learn_words": true,
+  "repeat_speed": "Normal",
+  "key_animation": false,
+  "sound": true,
+  "show_ai": true,
+  "x": 2799,
+  "y": 767
 }

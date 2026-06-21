@@ -1,255 +1,99 @@
-import ctypes
-import json
-import os
 import sys
-import tkinter as tk
-from ctypes import wintypes
-from tkinter import ttk
 
 
 if sys.platform != "win32":
     raise SystemExit("This virtual keyboard currently supports Windows only.")
 
+import json
+import os
+import tkinter as tk
+import winsound
+from tkinter import font as tkfont
+from tkinter import ttk
 
-user32 = ctypes.WinDLL("user32", use_last_error=True)
-kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-kernel32.GetCurrentThreadId.restype = wintypes.DWORD
-user32.AttachThreadInput.argtypes = (wintypes.DWORD, wintypes.DWORD, wintypes.BOOL)
-user32.AttachThreadInput.restype = wintypes.BOOL
-user32.BringWindowToTop.argtypes = (wintypes.HWND,)
-user32.BringWindowToTop.restype = wintypes.BOOL
-user32.GetAncestor.argtypes = (wintypes.HWND, wintypes.UINT)
-user32.GetAncestor.restype = wintypes.HWND
-user32.GetForegroundWindow.restype = wintypes.HWND
-user32.GetWindowThreadProcessId.argtypes = (
-    wintypes.HWND,
-    ctypes.POINTER(wintypes.DWORD),
+import winapi as win
+from keyboard_data import (
+    HIGH_CONTRAST,
+    LANGUAGES,
+    LAYOUTS,
+    SPECIAL_LABELS,
+    SYMBOL_ROW,
+    THEMES,
 )
-user32.GetWindowThreadProcessId.restype = wintypes.DWORD
-user32.IsIconic.argtypes = (wintypes.HWND,)
-user32.IsIconic.restype = wintypes.BOOL
-user32.IsWindow.argtypes = (wintypes.HWND,)
-user32.IsWindow.restype = wintypes.BOOL
-user32.GetWindowLongW.argtypes = (wintypes.HWND, ctypes.c_int)
-user32.GetWindowLongW.restype = wintypes.LONG
-user32.SetWindowLongW.argtypes = (wintypes.HWND, ctypes.c_int, wintypes.LONG)
-user32.SetWindowLongW.restype = wintypes.LONG
-user32.SetFocus.argtypes = (wintypes.HWND,)
-user32.SetFocus.restype = wintypes.HWND
-user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
-user32.SetForegroundWindow.restype = wintypes.BOOL
-user32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
-user32.ShowWindow.restype = wintypes.BOOL
-
-INPUT_KEYBOARD = 1
-KEYEVENTF_KEYUP = 0x0002
-KEYEVENTF_UNICODE = 0x0004
-SWP_NOMOVE = 0x0002
-SWP_NOSIZE = 0x0001
-SWP_NOACTIVATE = 0x0010
-GWL_EXSTYLE = -20
-GA_ROOT = 2
-WS_EX_TOPMOST = 0x00000008
-WS_EX_TOOLWINDOW = 0x00000080
-WS_EX_APPWINDOW = 0x00040000
-WS_EX_NOACTIVATE = 0x08000000
-
-VK_BACK = 0x08
-VK_TAB = 0x09
-VK_RETURN = 0x0D
-VK_SHIFT = 0x10
-VK_CONTROL = 0x11
-VK_ESCAPE = 0x1B
-VK_A = 0x41
-VK_SPACE = 0x20
-VK_HOME = 0x24
-
-HWND_TOPMOST = -1
-HWND_NOTOPMOST = -2
-SW_HIDE = 0
-SW_SHOW = 5
-SW_RESTORE = 9
-ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+from text_logic import completion, rank_words
 
 
-class KEYBDINPUT(ctypes.Structure):
-    _fields_ = (
-        ("wVk", wintypes.WORD),
-        ("wScan", wintypes.WORD),
-        ("dwFlags", wintypes.DWORD),
-        ("time", wintypes.DWORD),
-        ("dwExtraInfo", ULONG_PTR),
-    )
+SCALES = {"Small": 0.85, "Normal": 1.0, "Large": 1.2, "Extra Large": 1.45}
+# (initial delay, repeat interval) in milliseconds for hold-to-repeat keys.
+REPEAT_SPEEDS = {"Slow": (500, 110), "Normal": (400, 60), "Fast": (320, 40)}
 
-
-class MOUSEINPUT(ctypes.Structure):
-    _fields_ = (
-        ("dx", wintypes.LONG),
-        ("dy", wintypes.LONG),
-        ("mouseData", wintypes.DWORD),
-        ("dwFlags", wintypes.DWORD),
-        ("time", wintypes.DWORD),
-        ("dwExtraInfo", ULONG_PTR),
-    )
-
-
-class HARDWAREINPUT(ctypes.Structure):
-    _fields_ = (
-        ("uMsg", wintypes.DWORD),
-        ("wParamL", wintypes.WORD),
-        ("wParamH", wintypes.WORD),
-    )
-
-
-class INPUT_UNION(ctypes.Union):
-    _fields_ = (
-        ("mi", MOUSEINPUT),
-        ("ki", KEYBDINPUT),
-        ("hi", HARDWAREINPUT),
-    )
-
-
-class INPUT(ctypes.Structure):
-    _fields_ = (("type", wintypes.DWORD), ("union", INPUT_UNION))
-
-
-user32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int)
-user32.SendInput.restype = wintypes.UINT
-
-
-def _check_send_input(result, inputs):
-    if result != inputs:
-        error = ctypes.get_last_error()
-        raise ctypes.WinError(error)
-
-
-def send_unicode(text):
-    for char in text:
-        code = ord(char)
-        down = INPUT(
-            type=INPUT_KEYBOARD,
-            union=INPUT_UNION(ki=KEYBDINPUT(0, code, KEYEVENTF_UNICODE, 0, 0)),
-        )
-        up = INPUT(
-            type=INPUT_KEYBOARD,
-            union=INPUT_UNION(
-                ki=KEYBDINPUT(0, code, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, 0, 0)
-            ),
-        )
-        batch = (INPUT * 2)(down, up)
-        sent = user32.SendInput(2, batch, ctypes.sizeof(INPUT))
-        _check_send_input(sent, 2)
-
-
-def send_virtual_key(vk_code):
-    down = INPUT(
-        type=INPUT_KEYBOARD,
-        union=INPUT_UNION(ki=KEYBDINPUT(vk_code, 0, 0, 0, 0)),
-    )
-    up = INPUT(
-        type=INPUT_KEYBOARD,
-        union=INPUT_UNION(ki=KEYBDINPUT(vk_code, 0, KEYEVENTF_KEYUP, 0, 0)),
-    )
-    batch = (INPUT * 2)(down, up)
-    sent = user32.SendInput(2, batch, ctypes.sizeof(INPUT))
-    _check_send_input(sent, 2)
-
-
-def send_ctrl_key(vk_code):
-    sequence = (
-        KEYBDINPUT(VK_CONTROL, 0, 0, 0, 0),
-        KEYBDINPUT(vk_code, 0, 0, 0, 0),
-        KEYBDINPUT(vk_code, 0, KEYEVENTF_KEYUP, 0, 0),
-        KEYBDINPUT(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0, 0),
-    )
-    batch = (INPUT * len(sequence))(
-        *[INPUT(type=INPUT_KEYBOARD, union=INPUT_UNION(ki=key)) for key in sequence]
-    )
-    sent = user32.SendInput(len(sequence), batch, ctypes.sizeof(INPUT))
-    _check_send_input(sent, len(sequence))
-
-
-THEMES = {
-    "Light": {
-        "bg": "#ffffff",
-        "muted": "#777777",
-        "status": "#999999",
-        "chrome_bg": "#eeeeee",
-        "chrome_fg": "#555555",
-        "chrome_active": "#e0e0e0",
-        "key_bg": "#f2f2f2",
-        "key_fg": "#333333",
-        "key_border": "#d2d2d2",
-        "key_light": "#f7f7f7",
-        "key_active": "#e6e6e6",
-        "key_pressed": "#dadada",
-        "accent": "#d7eaff",
-        "accent_fg": "#111111",
-    },
-    "Dark": {
-        "bg": "#2b2b2b",
-        "muted": "#bbbbbb",
-        "status": "#888888",
-        "chrome_bg": "#3c3f41",
-        "chrome_fg": "#e8e8e8",
-        "chrome_active": "#4a4d4f",
-        "key_bg": "#3c3f41",
-        "key_fg": "#e8e8e8",
-        "key_border": "#555555",
-        "key_light": "#454749",
-        "key_active": "#4a4d4f",
-        "key_pressed": "#565a5c",
-        "accent": "#37506e",
-        "accent_fg": "#ffffff",
-    },
+DEFAULTS = {
+    "theme": "Light",
+    "high_contrast": False,
+    "language": "Norsk",
+    "scale": "Normal",
+    "always_on_top": True,
+    "remember_position": True,
+    "suggestions_enabled": True,
+    "suggestion_count": 6,
+    "auto_space": True,
+    "learn_words": True,
+    "repeat_speed": "Normal",
+    "key_animation": True,
+    "sound": False,
+    "show_ai": True,
 }
 
-LANGUAGES = {
-    "Norsk": [
-        "og", "jeg", "det", "du", "er", "ikke", "til", "med", "for", "som",
-        "hei", "takk", "ja", "nei", "kan", "skrive", "norsk", "keyboard",
-        "virtual", "klikke", "ord", "hvor", "når", "hva", "bra", "veldig",
-    ],
-    "English": [
-        "the", "and", "you", "that", "was", "for", "are", "with", "have",
-        "this", "from", "they", "what", "hello", "thanks", "yes", "no",
-        "can", "write", "keyboard", "virtual", "click", "word", "where",
-        "when", "good",
-    ],
-}
+BASE_WIDTH, BASE_HEIGHT = 640, 320
+BASE_MIN_WIDTH, BASE_MIN_HEIGHT = 520, 245
 
 
 class VirtualKeyboard(tk.Tk):
+    # Keys that fire repeatedly while held down.
+    REPEATABLE = {"Backspace", "Del", "Left", "Right", "Up", "Down"}
+
     def __init__(self):
         super().__init__()
         self.title("Virtual Keyboard")
-        self.geometry("560x285")
-        self.minsize(520, 245)
         self.attributes("-topmost", True)
         # Remove the native OS title bar so the keyboard has a single, clearly
         # styled Exit button instead of the OS close button plus a custom one.
         self.overrideredirect(True)
         self._drag_offset = (0, 0)
 
-        settings = self._load_settings()
-        self.theme_name = settings.get("theme", "Light")
-        if self.theme_name not in THEMES:
-            self.theme_name = "Light"
-        self.language = settings.get("language", "Norsk")
-        if self.language not in LANGUAGES:
-            self.language = "Norsk"
+        s = self._load_settings()
+        self.theme_name = s["theme"] if s["theme"] in THEMES else "Light"
+        self.high_contrast = bool(s["high_contrast"])
+        self.language = s["language"] if s["language"] in LANGUAGES else "Norsk"
+        self.scale_name = s["scale"] if s["scale"] in SCALES else "Normal"
+        self.remember_position = bool(s["remember_position"])
+        self.suggestions_enabled = bool(s["suggestions_enabled"])
+        self.suggestion_count = s["suggestion_count"] if s["suggestion_count"] in (3, 6, 9) else 6
+        self.auto_space = bool(s["auto_space"])
+        self.learn_words = bool(s["learn_words"])
+        self.repeat_speed = s["repeat_speed"] if s["repeat_speed"] in REPEAT_SPEEDS else "Normal"
+        self.key_animation = bool(s["key_animation"])
+        self.sound = bool(s["sound"])
+        self.show_ai = bool(s["show_ai"])
+        self.always_on_top = tk.BooleanVar(value=bool(s["always_on_top"]))
+        self.word_freq = self._load_word_freq()
 
-        self.caps = False
+        self.shift_active = False
+        self.caps_lock = False
         self.symbols_visible = False
         self.settings_visible = False
-        self.always_on_top = tk.BooleanVar(value=settings.get("always_on_top", True))
         self.current_word = ""
         self.status_text = tk.StringVar(value="Click where text should go, then use the keys")
         self.key_buttons = {}
         self.last_target_hwnd = None
+        self._repeat_job = None
+        self._option_groups = []
         self.common_words = LANGUAGES[self.language]
+        self.layout_rows = LAYOUTS[self.language]["rows"]
+        self.shift_map = LAYOUTS[self.language]["shift"]
 
         self.configure(bg=self.palette["bg"])
+        self._apply_geometry(s)
 
         self.taskbar_anchor = None
         self._anchor_ready = False
@@ -263,24 +107,57 @@ class VirtualKeyboard(tk.Tk):
 
     @property
     def palette(self):
-        return THEMES[self.theme_name]
+        return HIGH_CONTRAST if self.high_contrast else THEMES[self.theme_name]
 
+    def _scaled(self, value):
+        return max(1, int(round(value * SCALES[self.scale_name])))
+
+    # ------------------------------------------------------------------ settings
     def _settings_path(self):
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
     def _load_settings(self):
+        merged = dict(DEFAULTS)
         try:
             with open(self._settings_path(), encoding="utf-8") as handle:
                 data = json.load(handle)
-            return data if isinstance(data, dict) else {}
+            if isinstance(data, dict):
+                merged.update(data)
         except (OSError, ValueError):
-            return {}
+            pass
+        return merged
+
+    def _apply_geometry(self, settings):
+        width = int(BASE_WIDTH * SCALES[self.scale_name])
+        height = int(BASE_HEIGHT * SCALES[self.scale_name])
+        self.minsize(
+            int(BASE_MIN_WIDTH * SCALES[self.scale_name]),
+            int(BASE_MIN_HEIGHT * SCALES[self.scale_name]),
+        )
+        x, y = settings.get("x"), settings.get("y")
+        if self.remember_position and isinstance(x, int) and isinstance(y, int):
+            self.geometry(f"{width}x{height}+{x}+{y}")
+        else:
+            self.geometry(f"{width}x{height}")
 
     def _save_settings(self):
         data = {
             "theme": self.theme_name,
+            "high_contrast": self.high_contrast,
             "language": self.language,
+            "scale": self.scale_name,
             "always_on_top": bool(self.always_on_top.get()),
+            "remember_position": self.remember_position,
+            "suggestions_enabled": self.suggestions_enabled,
+            "suggestion_count": self.suggestion_count,
+            "auto_space": self.auto_space,
+            "learn_words": self.learn_words,
+            "repeat_speed": self.repeat_speed,
+            "key_animation": self.key_animation,
+            "sound": self.sound,
+            "show_ai": self.show_ai,
+            "x": self.winfo_x(),
+            "y": self.winfo_y(),
         }
         try:
             with open(self._settings_path(), "w", encoding="utf-8") as handle:
@@ -288,6 +165,36 @@ class VirtualKeyboard(tk.Tk):
         except OSError:
             pass
 
+    def _freq_path(self):
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "learned_words.json")
+
+    def _load_word_freq(self):
+        try:
+            with open(self._freq_path(), encoding="utf-8") as handle:
+                data = json.load(handle)
+            if isinstance(data, dict):
+                return {str(k): int(v) for k, v in data.items() if isinstance(v, int)}
+        except (OSError, ValueError):
+            pass
+        return {}
+
+    def _save_word_freq(self):
+        try:
+            with open(self._freq_path(), "w", encoding="utf-8") as handle:
+                json.dump(self.word_freq, handle)
+        except OSError:
+            pass
+
+    def _learn(self, word):
+        if not self.learn_words:
+            return
+        word = word.strip().lower()
+        if len(word) < 2 or not word.isalpha():
+            return
+        self.word_freq[word] = self.word_freq.get(word, 0) + 1
+        self._save_word_freq()
+
+    # --------------------------------------------------------------------- styles
     def _build_styles(self):
         self._style = ttk.Style(self)
         self._style.theme_use("clam")
@@ -296,15 +203,19 @@ class VirtualKeyboard(tk.Tk):
     def _configure_styles(self):
         style = self._style
         palette = self.palette
+        pad = (self._scaled(7), self._scaled(5))
+        key_font = ("Segoe UI", self._scaled(10))
+        word_font = ("Segoe UI", self._scaled(9))
+
         style.configure("Root.TFrame", background=palette["bg"])
         style.configure("Keyboard.TFrame", background=palette["bg"])
-        style.configure("Key.TButton", font=("Segoe UI", 10), padding=(7, 5))
-        style.configure("Wide.TButton", font=("Segoe UI", 10), padding=(7, 5))
-        style.configure("Word.TButton", font=("Segoe UI", 9), padding=(8, 4))
+        style.configure("Key.TButton", font=key_font, padding=pad)
+        style.configure("Wide.TButton", font=key_font, padding=pad)
+        style.configure("Word.TButton", font=word_font, padding=(self._scaled(8), self._scaled(4)))
         style.configure(
             "Caps.TButton",
-            font=("Segoe UI", 10, "bold"),
-            padding=(7, 5),
+            font=("Segoe UI", self._scaled(10), "bold"),
+            padding=pad,
             foreground=palette["accent_fg"],
             background=palette["accent"],
             bordercolor=palette["key_border"],
@@ -334,6 +245,19 @@ class VirtualKeyboard(tk.Tk):
                 ],
             )
 
+    def _apply_scale(self):
+        self._configure_styles()
+        width = int(BASE_WIDTH * SCALES[self.scale_name])
+        height = int(BASE_HEIGHT * SCALES[self.scale_name])
+        self.minsize(
+            int(BASE_MIN_WIDTH * SCALES[self.scale_name]),
+            int(BASE_MIN_HEIGHT * SCALES[self.scale_name]),
+        )
+        self.geometry(f"{width}x{height}+{self.winfo_x()}+{self.winfo_y()}")
+        self.suggestions.config(height=self._scaled(42))
+        self._refresh_suggestions()
+
+    # ------------------------------------------------------------------------- UI
     def _build_ui(self):
         root = ttk.Frame(self, style="Root.TFrame", padding=8)
         root.pack(fill=tk.BOTH, expand=True)
@@ -341,24 +265,28 @@ class VirtualKeyboard(tk.Tk):
         self.top_bar = ttk.Frame(root, style="Root.TFrame")
         self.top_bar.pack(fill=tk.X, pady=(0, 4))
 
-        self.title_label = tk.Label(
+        self.language_button = tk.Button(
             self.top_bar,
-            text=self.language,
+            text=self._language_caption(self.language),
+            command=self._cycle_language,
+            borderwidth=0,
+            highlightthickness=0,
             font=("Segoe UI", 10),
+            cursor="hand2",
+            padx=2,
         )
-        self.title_label.pack(side=tk.LEFT)
+        self.language_button.pack(side=tk.LEFT)
 
         self.status_label = tk.Label(
-            self.top_bar,
-            textvariable=self.status_text,
-            font=("Segoe UI", 8),
+            self.top_bar, textvariable=self.status_text, font=("Segoe UI", 8)
         )
         self.status_label.pack(side=tk.LEFT, padx=(8, 0))
 
         # No OS title bar anymore, so let the user drag the window by the top bar.
-        for widget in (self.top_bar, self.title_label, self.status_label):
+        for widget in (self.top_bar, self.status_label):
             widget.bind("<Button-1>", self._start_move)
             widget.bind("<B1-Motion>", self._on_move)
+            widget.bind("<ButtonRelease-1>", self._on_move_done)
 
         self.exit_button = tk.Button(
             self.top_bar,
@@ -386,6 +314,17 @@ class VirtualKeyboard(tk.Tk):
         )
         self.clear_button.pack(side=tk.RIGHT, padx=(6, 0))
 
+        self.minimize_button = tk.Button(
+            self.top_bar,
+            text="—",
+            command=self._minimize,
+            borderwidth=0,
+            highlightthickness=0,
+            font=("Segoe UI", 10, "bold"),
+            padx=10,
+        )
+        self.minimize_button.pack(side=tk.RIGHT, padx=(6, 0))
+
         self.settings_button = tk.Button(
             self.top_bar,
             text="⚙",
@@ -407,71 +346,154 @@ class VirtualKeyboard(tk.Tk):
         self.main_view.pack(fill=tk.BOTH, expand=True)
 
     def _build_main_view(self, parent):
-        self.suggestions = ttk.Frame(parent, style="Root.TFrame")
-        self.suggestions.pack(fill=tk.X, pady=(0, 4))
+        self.suggestions = tk.Frame(parent, bg=self.palette["bg"], height=self._scaled(42))
+        self.suggestions.pack(fill=tk.X, pady=(0, 6))
+        self.suggestions.pack_propagate(False)
+
+        self.keyboard_frame = ttk.Frame(parent, style="Keyboard.TFrame")
+        self.keyboard_frame.pack(fill=tk.BOTH, expand=True)
+        self._build_keyboard()
         self._refresh_suggestions()
 
-        keyboard = ttk.Frame(parent, style="Keyboard.TFrame")
-        keyboard.pack(fill=tk.BOTH, expand=True)
+    def _build_keyboard(self):
+        for child in self.keyboard_frame.winfo_children():
+            child.destroy()
+        self.key_buttons = {}
 
-        rows = [
-            ["|", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "+", "\\", "Backspace"],
-            ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "å", "¨"],
-            ["Home", "a", "s", "d", "f", "g", "h", "j", "k", "l", "ø", "æ", "'"],
-            ["ShiftLeft", "<", "z", "x", "c", "v", "b", "n", "m", ",", ".", "-", "ShiftRight"],
-            ["Symbols", "Space", "AI"],
-        ]
-
-        for row in rows:
-            frame = ttk.Frame(keyboard, style="Keyboard.TFrame")
+        for row in self.layout_rows:
+            items = [k for k in row if not (k == "AI" and not self.show_ai)]
+            frame = ttk.Frame(self.keyboard_frame, style="Keyboard.TFrame")
             frame.pack(fill=tk.BOTH, expand=True, pady=2)
-            for column, item in enumerate(row):
-                weight = self._key_weight(item)
-                frame.columnconfigure(column, weight=weight, uniform="keys")
+            for column, item in enumerate(items):
+                frame.columnconfigure(column, weight=self._key_weight(item), uniform="keys")
                 button = ttk.Button(
                     frame,
                     text=self._key_label(item),
                     style=self._style_for_key(item),
-                    command=lambda value=item: self._press_key(value),
                 )
+                if item in self.REPEATABLE:
+                    # Drive entirely from press/release so holding repeats; no
+                    # command, so there's no extra fire on release.
+                    button.bind("<ButtonPress-1>", lambda _e, v=item: self._start_repeat(v))
+                    button.bind("<ButtonRelease-1>", lambda _e: self._stop_repeat())
+                    button.bind("<Leave>", lambda _e: self._stop_repeat())
+                else:
+                    button.configure(command=lambda value=item: self._press_key(value))
                 button.grid(row=0, column=column, sticky="nsew", padx=2)
                 self.key_buttons.setdefault(item, []).append(button)
             frame.rowconfigure(0, weight=1)
 
+    def _start_repeat(self, key):
+        self._stop_repeat()
+        self._press_key(key)
+        delay = REPEAT_SPEEDS[self.repeat_speed][0]
+        self._repeat_job = self.after(delay, lambda: self._repeat_tick(key))
+
+    def _repeat_tick(self, key):
+        self._press_key(key, feedback=False)
+        interval = REPEAT_SPEEDS[self.repeat_speed][1]
+        self._repeat_job = self.after(interval, lambda: self._repeat_tick(key))
+
+    def _stop_repeat(self):
+        if self._repeat_job is not None:
+            self.after_cancel(self._repeat_job)
+            self._repeat_job = None
+
+    # ------------------------------------------------------------- settings panel
     def _build_settings_panel(self, parent):
         self._settings_labels = []
+        self._option_groups = []
 
-        header = tk.Label(parent, text="Settings", font=("Segoe UI", 12, "bold"))
-        header.pack(anchor=tk.W, pady=(0, 8))
-        self._settings_labels.append(header)
-
-        self._theme_buttons = self._build_option_row(
-            parent, "Theme", list(THEMES.keys()), self._set_theme
-        )
-        self._lang_buttons = self._build_option_row(
-            parent, "Language", list(LANGUAGES.keys()), self._set_language
-        )
-        self._aot_buttons = self._build_option_row(
-            parent, "Always on top", ["On", "Off"], self._set_always_on_top
-        )
-
+        header = ttk.Frame(parent, style="Root.TFrame")
+        header.pack(fill=tk.X, pady=(0, 6))
+        title = tk.Label(header, text="Settings", font=("Segoe UI", 12, "bold"))
+        title.pack(side=tk.LEFT)
+        self._settings_labels.append(title)
         self._settings_back = tk.Button(
-            parent,
-            text="← Back to keyboard",
+            header,
+            text="← Back",
             command=self._hide_settings,
             borderwidth=0,
             highlightthickness=0,
             font=("Segoe UI", 10),
             padx=10,
-            pady=4,
+            pady=2,
         )
-        self._settings_back.pack(anchor=tk.W, pady=(14, 0))
+        self._settings_back.pack(side=tk.RIGHT)
 
-    def _build_option_row(self, parent, label, options, command):
+        canvas = tk.Canvas(parent, highlightthickness=0, bd=0, bg=self.palette["bg"])
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._settings_canvas = canvas
+
+        inner = ttk.Frame(canvas, style="Root.TFrame")
+        window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window_id, width=e.width))
+        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", self._on_settings_wheel))
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+
+        self._build_settings_categories(inner)
+
+    def _on_settings_wheel(self, event):
+        self._settings_canvas.yview_scroll(int(-event.delta / 120), "units")
+
+    def _build_settings_categories(self, parent):
+        self._section(parent, "Appearance")
+        self._add_option(parent, "Theme", list(THEMES.keys()),
+                         self._set_theme, lambda: self.theme_name)
+        self._add_option(parent, "Keyboard Scale", list(SCALES.keys()),
+                         self._set_scale, lambda: self.scale_name)
+        self._add_option(parent, "Key Press Animation", ["On", "Off"],
+                         self._set_key_animation, lambda: self._onoff(self.key_animation))
+
+        self._section(parent, "Behavior")
+        self._add_option(parent, "Always on Top", ["On", "Off"],
+                         self._set_always_on_top, lambda: self._onoff(self.always_on_top.get()))
+        self._add_option(parent, "Remember Position", ["On", "Off"],
+                         self._set_remember_position, lambda: self._onoff(self.remember_position))
+
+        self._section(parent, "Suggestions")
+        self._add_option(parent, "Enable Suggestions", ["On", "Off"],
+                         self._set_suggestions_enabled, lambda: self._onoff(self.suggestions_enabled))
+        self._add_option(parent, "Number of Suggestions", ["3", "6", "9"],
+                         self._set_suggestion_count, lambda: str(self.suggestion_count))
+        self._add_option(parent, "Auto-Insert Space", ["On", "Off"],
+                         self._set_auto_space, lambda: self._onoff(self.auto_space))
+        self._add_option(parent, "Learn Words", ["On", "Off"],
+                         self._set_learn_words, lambda: self._onoff(self.learn_words))
+
+        self._section(parent, "Language")
+        self._add_option(parent, "Language", list(LANGUAGES.keys()),
+                         self._set_language, lambda: self.language)
+
+        self._section(parent, "Accessibility")
+        self._add_option(parent, "Key Repeat Speed", list(REPEAT_SPEEDS.keys()),
+                         self._set_repeat_speed, lambda: self.repeat_speed)
+        self._add_option(parent, "High Contrast", ["On", "Off"],
+                         self._set_high_contrast, lambda: self._onoff(self.high_contrast))
+        self._add_option(parent, "Sound on Key Press", ["On", "Off"],
+                         self._set_sound, lambda: self._onoff(self.sound))
+
+        self._section(parent, "AI")
+        self._add_option(parent, "Show AI Button", ["On", "Off"],
+                         self._set_show_ai, lambda: self._onoff(self.show_ai))
+
+    @staticmethod
+    def _onoff(flag):
+        return "On" if flag else "Off"
+
+    def _section(self, parent, text):
+        label = tk.Label(parent, text=text, font=("Segoe UI", 10, "bold"), anchor=tk.W)
+        label.pack(fill=tk.X, pady=(10, 2))
+        self._settings_labels.append(label)
+
+    def _add_option(self, parent, label, options, setter, getter):
         row = ttk.Frame(parent, style="Root.TFrame")
-        row.pack(fill=tk.X, pady=4)
-
-        caption = tk.Label(row, text=label, font=("Segoe UI", 10), width=14, anchor=tk.W)
+        row.pack(fill=tk.X, pady=3, padx=4)
+        caption = tk.Label(row, text=label, font=("Segoe UI", 9), width=20, anchor=tk.W)
         caption.pack(side=tk.LEFT)
         self._settings_labels.append(caption)
 
@@ -480,16 +502,16 @@ class VirtualKeyboard(tk.Tk):
             button = tk.Button(
                 row,
                 text=option,
-                command=lambda value=option: command(value),
+                command=lambda value=option: setter(value),
                 borderwidth=0,
                 highlightthickness=0,
-                font=("Segoe UI", 10),
-                padx=16,
-                pady=4,
+                font=("Segoe UI", 9),
+                padx=12,
+                pady=3,
             )
-            button.pack(side=tk.LEFT, padx=(0, 6))
+            button.pack(side=tk.LEFT, padx=(0, 5))
             buttons[option] = button
-        return buttons
+        self._option_groups.append((buttons, getter))
 
     def _toggle_settings(self):
         if self.settings_visible:
@@ -508,6 +530,29 @@ class VirtualKeyboard(tk.Tk):
         self.settings_view.pack_forget()
         self.main_view.pack(fill=tk.BOTH, expand=True)
 
+    # ------------------------------------------------------------------- setters
+    def _language_caption(self, name):
+        return f"🌐 {name} ▾"
+
+    def _cycle_language(self):
+        names = list(LANGUAGES.keys())
+        self._set_language(names[(names.index(self.language) + 1) % len(names)])
+
+    def _set_language(self, name):
+        if name not in LANGUAGES:
+            return
+        self.language = name
+        self.common_words = LANGUAGES[name]
+        self.layout_rows = LAYOUTS[name]["rows"]
+        self.shift_map = LAYOUTS[name]["shift"]
+        self.shift_active = False
+        self.current_word = ""
+        self.language_button.config(text=self._language_caption(name))
+        self._build_keyboard()
+        self._refresh_suggestions()
+        self._refresh_settings_highlights()
+        self._save_settings()
+
     def _set_theme(self, name):
         if name not in THEMES:
             return
@@ -515,23 +560,76 @@ class VirtualKeyboard(tk.Tk):
         self._apply_theme()
         self._save_settings()
 
-    def _set_language(self, name):
-        if name not in LANGUAGES:
+    def _set_scale(self, value):
+        if value not in SCALES:
             return
-        self.language = name
-        self.common_words = LANGUAGES[name]
-        self.current_word = ""
-        self.title_label.config(text=name)
-        self._refresh_suggestions()
+        self.scale_name = value
+        self._apply_scale()
         self._refresh_settings_highlights()
         self._save_settings()
 
-    def _set_always_on_top(self, choice):
-        self.always_on_top.set(choice == "On")
+    def _set_high_contrast(self, value):
+        self.high_contrast = value == "On"
+        self._apply_theme()
+        self._save_settings()
+
+    def _set_always_on_top(self, value):
+        self.always_on_top.set(value == "On")
         self._toggle_topmost()
         self._refresh_settings_highlights()
         self._save_settings()
 
+    def _set_remember_position(self, value):
+        self.remember_position = value == "On"
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_suggestions_enabled(self, value):
+        self.suggestions_enabled = value == "On"
+        self._refresh_suggestions()
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_suggestion_count(self, value):
+        self.suggestion_count = int(value)
+        self._refresh_suggestions()
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_auto_space(self, value):
+        self.auto_space = value == "On"
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_learn_words(self, value):
+        self.learn_words = value == "On"
+        self._refresh_suggestions()
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_key_animation(self, value):
+        self.key_animation = value == "On"
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_sound(self, value):
+        self.sound = value == "On"
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_repeat_speed(self, value):
+        if value in REPEAT_SPEEDS:
+            self.repeat_speed = value
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    def _set_show_ai(self, value):
+        self.show_ai = value == "On"
+        self._build_keyboard()
+        self._refresh_settings_highlights()
+        self._save_settings()
+
+    # ---------------------------------------------------------------- theming
     def _color_chrome_button(self, button):
         palette = self.palette
         button.config(
@@ -555,65 +653,76 @@ class VirtualKeyboard(tk.Tk):
                 self._color_chrome_button(button)
 
     def _refresh_settings_highlights(self):
-        self._highlight(self._theme_buttons, self.theme_name)
-        self._highlight(self._lang_buttons, self.language)
-        self._highlight(self._aot_buttons, "On" if self.always_on_top.get() else "Off")
+        for buttons, getter in self._option_groups:
+            self._highlight(buttons, getter())
 
     def _apply_theme(self):
         palette = self.palette
         self._configure_styles()
         self.configure(bg=palette["bg"])
 
-        self.title_label.config(bg=palette["bg"], fg=palette["muted"])
+        self.language_button.config(
+            bg=palette["bg"],
+            fg=palette["muted"],
+            activebackground=palette["bg"],
+            activeforeground=palette["muted"],
+        )
         self.status_label.config(bg=palette["bg"], fg=palette["status"])
         self._color_chrome_button(self.clear_button)
+        self._color_chrome_button(self.minimize_button)
         self._color_chrome_button(self.settings_button)
 
         for label in self._settings_labels:
             label.config(bg=palette["bg"], fg=palette["muted"])
         self._color_chrome_button(self._settings_back)
+        self._settings_canvas.config(bg=palette["bg"])
 
+        self.suggestions.config(bg=palette["bg"])
         self._refresh_settings_highlights()
         self._refresh_suggestions()
 
-    def _key_label(self, key):
-        labels = {
-            "Backspace": "⌫",
-            "ShiftLeft": "⇧",
-            "ShiftRight": "⇧",
-            "Home": "⌂",
-            "Symbols": "@#&",
-            "AI": "✨ AI",
-        }
-        if key in labels:
-            return labels[key]
+    # ---------------------------------------------------------------- key render
+    def _shifted_char(self, key):
         if len(key) == 1 and key.isalpha():
-            return key.upper() if self.caps else key
+            return key.upper()
+        return self.shift_map.get(key, key)
+
+    def _key_label(self, key):
+        if key in SPECIAL_LABELS:
+            return SPECIAL_LABELS[key]
+        if self.shift_active:
+            return self._shifted_char(key)
+        if self.caps_lock and len(key) == 1 and key.isalpha():
+            return key.upper()
         return key
 
     def _key_weight(self, key):
         if key == "Space":
             return 7
-        if key in {"Symbols", "AI"}:
-            return 2
-        if key in {"Backspace", "Home", "ShiftLeft", "ShiftRight"}:
-            return 2
-        return 1
+        if key in {"Enter", "Backspace"}:
+            return 3
+        wide = {"Symbols", "AI", "ShiftLeft", "ShiftRight", "Tab", "Caps"}
+        return 2 if key in wide else 1
 
     def _style_for_key(self, key):
-        if key in {"ShiftLeft", "ShiftRight"} and self.caps:
+        if key in {"ShiftLeft", "ShiftRight"} and self.shift_active:
+            return "Caps.TButton"
+        if key == "Caps" and self.caps_lock:
             return "Caps.TButton"
         if key == "Symbols" and self.symbols_visible:
             return "Caps.TButton"
-        if key in {"Backspace", "Space", "Home", "ShiftLeft", "ShiftRight", "Symbols", "AI"}:
-            return "Wide.TButton"
-        return "Key.TButton"
+        wide = {
+            "Backspace", "Space", "ShiftLeft", "ShiftRight",
+            "Symbols", "AI", "Enter", "Tab", "Caps",
+        }
+        return "Wide.TButton" if key in wide else "Key.TButton"
 
+    # ------------------------------------------------------------ window management
     def _root_hwnd(self):
         # tkinter's winfo_id() returns an inner child window on Windows; the
         # activation-controlling top-level frame is its GA_ROOT ancestor.
         hwnd = self.winfo_id()
-        return user32.GetAncestor(hwnd, GA_ROOT) or hwnd
+        return win.user32.GetAncestor(hwnd, win.GA_ROOT) or hwnd
 
     def _create_taskbar_anchor(self):
         # The keyboard itself is a non-activating tool window, so it never shows
@@ -623,9 +732,6 @@ class VirtualKeyboard(tk.Tk):
         anchor.title("Virtual Keyboard")
         anchor.geometry("1x1-2000-2000")
         anchor.attributes("-alpha", 0.0)
-        # Keep it unmapped until the taskbar style is applied so we never have
-        # to re-show it with ctypes (ShowWindow dispatches window messages while
-        # the GIL is released, which crashes the interpreter).
         anchor.withdraw()
         anchor.protocol("WM_DELETE_WINDOW", self.destroy)
         self.taskbar_anchor = anchor
@@ -635,19 +741,16 @@ class VirtualKeyboard(tk.Tk):
         if not self.taskbar_anchor:
             return
         hwnd = (
-            user32.GetAncestor(self.taskbar_anchor.winfo_id(), GA_ROOT)
+            win.user32.GetAncestor(self.taskbar_anchor.winfo_id(), win.GA_ROOT)
             or self.taskbar_anchor.winfo_id()
         )
-        style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
-        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-        # Map it via Tk (GIL-safe) so Windows shows the taskbar button.
+        style = win.user32.GetWindowLongW(hwnd, win.GWL_EXSTYLE)
+        style = (style | win.WS_EX_APPWINDOW) & ~win.WS_EX_TOOLWINDOW
+        win.user32.SetWindowLongW(hwnd, win.GWL_EXSTYLE, style)
         self.taskbar_anchor.deiconify()
         self.after(100, self._enable_anchor_mirroring)
 
     def _enable_anchor_mirroring(self):
-        # Bind only after the initial map so the startup map/unmap events don't
-        # bounce the keyboard around.
         if not self.taskbar_anchor:
             return
         self.taskbar_anchor.bind("<Unmap>", self._on_anchor_unmap)
@@ -665,28 +768,33 @@ class VirtualKeyboard(tk.Tk):
         self.lift()
         self.after(50, self._make_no_activate)
 
+    def _minimize(self):
+        if self.taskbar_anchor is not None:
+            self.taskbar_anchor.iconify()
+        self.withdraw()
+
     def _make_no_activate(self):
         hwnd = self._root_hwnd()
         topmost = self.always_on_top.get()
-        current_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        new_style = current_style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+        current_style = win.user32.GetWindowLongW(hwnd, win.GWL_EXSTYLE)
+        new_style = current_style | win.WS_EX_NOACTIVATE | win.WS_EX_TOOLWINDOW
         if topmost:
-            new_style |= WS_EX_TOPMOST
+            new_style |= win.WS_EX_TOPMOST
         else:
-            new_style &= ~WS_EX_TOPMOST
-        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
-        user32.SetWindowPos(
+            new_style &= ~win.WS_EX_TOPMOST
+        win.user32.SetWindowLongW(hwnd, win.GWL_EXSTYLE, new_style)
+        win.user32.SetWindowPos(
             hwnd,
-            HWND_TOPMOST if topmost else HWND_NOTOPMOST,
+            win.HWND_TOPMOST if topmost else win.HWND_NOTOPMOST,
             0,
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            win.SWP_NOMOVE | win.SWP_NOSIZE | win.SWP_NOACTIVATE,
         )
 
     def _track_target_window(self):
-        hwnd = user32.GetForegroundWindow()
+        hwnd = win.user32.GetForegroundWindow()
         if hwnd and not self._is_own_window(hwnd):
             self.last_target_hwnd = hwnd
         self.after(100, self._track_target_window)
@@ -697,29 +805,29 @@ class VirtualKeyboard(tk.Tk):
         except tk.TclError:
             return False
 
-        root_hwnd = user32.GetAncestor(hwnd, GA_ROOT) or hwnd
-        own_root = user32.GetAncestor(own_hwnd, GA_ROOT) or own_hwnd
+        root_hwnd = win.user32.GetAncestor(hwnd, win.GA_ROOT) or hwnd
+        own_root = win.user32.GetAncestor(own_hwnd, win.GA_ROOT) or own_hwnd
         return root_hwnd == own_root
 
     def _same_root_window(self, first_hwnd, second_hwnd):
         if not first_hwnd or not second_hwnd:
             return False
-        first_root = user32.GetAncestor(first_hwnd, GA_ROOT) or first_hwnd
-        second_root = user32.GetAncestor(second_hwnd, GA_ROOT) or second_hwnd
+        first_root = win.user32.GetAncestor(first_hwnd, win.GA_ROOT) or first_hwnd
+        second_root = win.user32.GetAncestor(second_hwnd, win.GA_ROOT) or second_hwnd
         return first_root == second_root
 
     def _activate_target_window(self, target_hwnd):
-        if not target_hwnd or not user32.IsWindow(target_hwnd):
+        if not target_hwnd or not win.user32.IsWindow(target_hwnd):
             return False
 
-        foreground = user32.GetForegroundWindow()
+        foreground = win.user32.GetForegroundWindow()
         if self._same_root_window(foreground, target_hwnd):
             return True
 
-        current_thread = kernel32.GetCurrentThreadId()
-        target_thread = user32.GetWindowThreadProcessId(target_hwnd, None)
+        current_thread = win.kernel32.GetCurrentThreadId()
+        target_thread = win.user32.GetWindowThreadProcessId(target_hwnd, None)
         foreground_thread = (
-            user32.GetWindowThreadProcessId(foreground, None) if foreground else 0
+            win.user32.GetWindowThreadProcessId(foreground, None) if foreground else 0
         )
 
         attached_target = False
@@ -727,33 +835,33 @@ class VirtualKeyboard(tk.Tk):
         try:
             if target_thread and target_thread != current_thread:
                 attached_target = bool(
-                    user32.AttachThreadInput(current_thread, target_thread, True)
+                    win.user32.AttachThreadInput(current_thread, target_thread, True)
                 )
             if foreground_thread and foreground_thread != current_thread:
                 attached_foreground = bool(
-                    user32.AttachThreadInput(current_thread, foreground_thread, True)
+                    win.user32.AttachThreadInput(current_thread, foreground_thread, True)
                 )
 
-            if user32.IsIconic(target_hwnd):
-                user32.ShowWindow(target_hwnd, SW_RESTORE)
+            if win.user32.IsIconic(target_hwnd):
+                win.user32.ShowWindow(target_hwnd, win.SW_RESTORE)
 
-            user32.BringWindowToTop(target_hwnd)
-            user32.SetForegroundWindow(target_hwnd)
+            win.user32.BringWindowToTop(target_hwnd)
+            win.user32.SetForegroundWindow(target_hwnd)
         finally:
             if attached_foreground:
-                user32.AttachThreadInput(current_thread, foreground_thread, False)
+                win.user32.AttachThreadInput(current_thread, foreground_thread, False)
             if attached_target:
-                user32.AttachThreadInput(current_thread, target_thread, False)
+                win.user32.AttachThreadInput(current_thread, target_thread, False)
 
-        return self._same_root_window(user32.GetForegroundWindow(), target_hwnd)
+        return self._same_root_window(win.user32.GetForegroundWindow(), target_hwnd)
 
     def _prepare_target_for_input(self):
-        foreground = user32.GetForegroundWindow()
+        foreground = win.user32.GetForegroundWindow()
         if foreground and not self._is_own_window(foreground):
             self.last_target_hwnd = foreground
             return True
 
-        if self.last_target_hwnd and user32.IsWindow(self.last_target_hwnd):
+        if self.last_target_hwnd and win.user32.IsWindow(self.last_target_hwnd):
             if not self._activate_target_window(self.last_target_hwnd):
                 self.status_text.set("Windows blocked focus; click the text field again")
                 return False
@@ -763,6 +871,7 @@ class VirtualKeyboard(tk.Tk):
         self.status_text.set("Click in a text field first")
         return False
 
+    # ----------------------------------------------------------------- drag / move
     def _start_move(self, event):
         self._drag_offset = (
             event.x_root - self.winfo_x(),
@@ -774,12 +883,17 @@ class VirtualKeyboard(tk.Tk):
         y = event.y_root - self._drag_offset[1]
         self.geometry(f"+{x}+{y}")
 
+    def _on_move_done(self, _event):
+        if self.remember_position:
+            self._save_settings()
+
+    # ----------------------------------------------------------------------- typing
     def _clear_text(self):
         if not self._prepare_target_for_input():
             return
         try:
-            send_ctrl_key(VK_A)
-            send_virtual_key(VK_BACK)
+            win.send_ctrl_key(win.VK_A)
+            win.send_virtual_key(win.VK_BACK)
         except OSError as exc:
             self.status_text.set(f"Could not clear: {exc}")
             return
@@ -790,130 +904,243 @@ class VirtualKeyboard(tk.Tk):
     def _toggle_topmost(self):
         self.attributes("-topmost", self.always_on_top.get())
         hwnd = self._root_hwnd()
-        insert_after = HWND_TOPMOST if self.always_on_top.get() else HWND_NOTOPMOST
-        user32.SetWindowPos(
+        insert_after = win.HWND_TOPMOST if self.always_on_top.get() else win.HWND_NOTOPMOST
+        win.user32.SetWindowPos(
             hwnd,
             insert_after,
             0,
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            win.SWP_NOMOVE | win.SWP_NOSIZE | win.SWP_NOACTIVATE,
         )
 
-    def _press_key(self, key):
-        try:
-            if key not in {"ShiftLeft", "ShiftRight", "Symbols", "AI"}:
-                if not self._prepare_target_for_input():
-                    return
+    def _press_key(self, key, feedback=True):
+        if feedback:
+            self._flash_key(key)
+            self._click_sound()
 
+        # Keys that act on the keyboard itself and never type into the target.
+        if key in {"ShiftLeft", "ShiftRight"}:
+            self.shift_active = not self.shift_active
+            self._rebuild_keyboard_labels()
+            return
+        if key == "Caps":
+            self.caps_lock = not self.caps_lock
+            self._rebuild_keyboard_labels()
+            return
+        if key == "Symbols":
+            self.symbols_visible = not self.symbols_visible
+            self._rebuild_keyboard_labels()
+            self._refresh_suggestions()
+            self.status_text.set(
+                "Symbols shown above" if self.symbols_visible else "Symbols hidden"
+            )
+            return
+        if key == "AI":
+            self.status_text.set("AI is a placeholder for now")
+            return
+
+        if not self._prepare_target_for_input():
+            return
+
+        try:
             if key == "Backspace":
-                send_virtual_key(VK_BACK)
+                win.send_virtual_key(win.VK_BACK)
                 self.current_word = self.current_word[:-1]
             elif key == "Enter":
-                send_virtual_key(VK_RETURN)
+                win.send_virtual_key(win.VK_RETURN)
+                self._learn(self.current_word)
                 self.current_word = ""
             elif key == "Tab":
-                send_virtual_key(VK_TAB)
+                win.send_virtual_key(win.VK_TAB)
+                self._learn(self.current_word)
                 self.current_word = ""
             elif key == "Esc":
-                send_virtual_key(VK_ESCAPE)
+                win.send_virtual_key(win.VK_ESCAPE)
                 self.current_word = ""
             elif key == "Space":
-                send_virtual_key(VK_SPACE)
+                win.send_virtual_key(win.VK_SPACE)
+                self._learn(self.current_word)
                 self.current_word = ""
             elif key == "Home":
-                send_virtual_key(VK_HOME)
+                win.send_virtual_key(win.VK_HOME)
                 self.current_word = ""
-            elif key in {"ShiftLeft", "ShiftRight"}:
-                self.caps = not self.caps
-                self._rebuild_keyboard_labels()
-            elif key == "Symbols":
-                self.symbols_visible = not self.symbols_visible
-                self._rebuild_keyboard_labels()
-                self._refresh_suggestions()
-                self.status_text.set(
-                    "Symbols shown above" if self.symbols_visible else "Symbols hidden"
-                )
-                return
-            elif key == "AI":
-                self.status_text.set("AI is a placeholder for now")
-                return
+            elif key == "End":
+                win.send_virtual_key(win.VK_END)
+                self.current_word = ""
+            elif key == "Del":
+                win.send_virtual_key(win.VK_DELETE)
+                self.current_word = ""
+            elif key == "Left":
+                win.send_virtual_key(win.VK_LEFT)
+                self.current_word = ""
+            elif key == "Right":
+                win.send_virtual_key(win.VK_RIGHT)
+                self.current_word = ""
+            elif key == "Up":
+                win.send_virtual_key(win.VK_UP)
+                self.current_word = ""
+            elif key == "Down":
+                win.send_virtual_key(win.VK_DOWN)
+                self.current_word = ""
             else:
-                character = key.upper() if self.caps and key.isalpha() else key
-                send_unicode(character)
+                if self.shift_active:
+                    character = self._shifted_char(key)
+                elif self.caps_lock and len(key) == 1 and key.isalpha():
+                    character = key.upper()
+                else:
+                    character = key
+                win.send_unicode(character)
                 if character.isalpha():
                     self.current_word += character.lower()
                 else:
+                    self._learn(self.current_word)
                     self.current_word = ""
             self.status_text.set("Typed")
-            self._refresh_suggestions()
         except OSError as exc:
             self.status_text.set(f"Could not type: {exc}")
+            return
+
+        # Shift is one-shot: release it after a single key (like a phone keyboard).
+        if self.shift_active:
+            self.shift_active = False
+            self._rebuild_keyboard_labels()
+        self._refresh_suggestions()
 
     def _insert_word(self, word):
         if not self._prepare_target_for_input():
             return
-
-        suffix = " "
-        replacement = word[len(self.current_word) :] + suffix
-        if replacement:
-            send_unicode(replacement)
+        suffix = " " if self.auto_space else ""
+        try:
+            win.send_unicode(completion(word, self.current_word) + suffix)
+        except OSError as exc:
+            self.status_text.set(f"Could not type: {exc}")
+            return
+        self._learn(word)
         self.current_word = ""
         self.status_text.set(f'Inserted "{word}"')
         self._refresh_suggestions()
+
+    # ------------------------------------------------------------------ suggestions
+    def _show_suggestion_bar(self):
+        if not self.suggestions.winfo_manager():
+            self.suggestions.pack(fill=tk.X, pady=(0, 6), before=self.keyboard_frame)
+
+    def _hide_suggestion_bar(self):
+        if self.suggestions.winfo_manager():
+            self.suggestions.pack_forget()
 
     def _refresh_suggestions(self):
         for child in self.suggestions.winfo_children():
             child.destroy()
 
         if self.symbols_visible:
-            self._fill_symbol_row()
+            self._show_suggestion_bar()
+            self._fill_symbol_cells()
             return
 
-        matches = self._matching_words()
+        if not self.suggestions_enabled:
+            self._hide_suggestion_bar()
+            return
+
+        self._show_suggestion_bar()
+        frequencies = self.word_freq if self.learn_words else {}
+        matches = rank_words(
+            self.common_words, frequencies, self.current_word, self.suggestion_count
+        )
         if not matches:
-            matches = self.common_words[:6]
+            matches = self.common_words[: self.suggestion_count]
+        for word in matches:
+            self._make_chip(word, lambda value=word: self._insert_word(value))
 
-        for word in matches[:6]:
-            button = ttk.Button(
-                self.suggestions,
-                text=word,
-                style="Word.TButton",
-                command=lambda value=word: self._insert_word(value),
-            )
-            button.pack(side=tk.LEFT, padx=2)
+    def _make_chip(self, text, command):
+        """A clickable, pill-shaped suggestion chip drawn on a small canvas."""
+        palette = self.palette
+        font = tkfont.Font(family="Segoe UI", size=self._scaled(10))
+        height = self._scaled(30)
+        width = font.measure(text) + self._scaled(28)
 
-    def _fill_symbol_row(self):
-        symbols = [
-            "!", "?", "@", "#", "&", "%", "*",
-            "(", ")", "=", "/", "_", ":", '"',
+        chip = tk.Canvas(
+            self.suggestions,
+            width=width,
+            height=height,
+            bg=palette["bg"],
+            highlightthickness=0,
+            bd=0,
+            cursor="hand2",
+        )
+        radius = height / 2
+        shapes = [
+            chip.create_oval(0, 0, height, height, width=0),
+            chip.create_oval(width - height, 0, width, height, width=0),
+            chip.create_rectangle(radius, 0, width - radius, height, width=0),
         ]
-        for index, symbol in enumerate(symbols):
-            self.suggestions.columnconfigure(index, weight=1, uniform="words")
-            button = ttk.Button(
+        chip.create_text(
+            width / 2, height / 2, text=text, fill=palette["chip_fg"], font=font
+        )
+
+        def paint(color):
+            for shape in shapes:
+                chip.itemconfig(shape, fill=color)
+
+        paint(palette["chip"])
+        chip.bind("<Enter>", lambda _e: paint(palette["chip_hover"]))
+        chip.bind("<Leave>", lambda _e: paint(palette["chip"]))
+        chip.bind("<Button-1>", lambda _e: command())
+        chip.pack(side=tk.LEFT, padx=(8, 0), pady=6)
+        return chip
+
+    def _fill_symbol_cells(self):
+        # Even-width cells so any number of symbols fits the bar without overflow.
+        palette = self.palette
+        self.suggestions.grid_rowconfigure(0, weight=1)
+        for index, symbol in enumerate(SYMBOL_ROW):
+            self.suggestions.grid_columnconfigure(index, weight=1, uniform="sym")
+            button = tk.Button(
                 self.suggestions,
                 text=symbol,
-                style="Word.TButton",
                 command=lambda value=symbol: self._press_key(value),
+                bg=palette["chip"],
+                fg=palette["chip_fg"],
+                activebackground=palette["chip_hover"],
+                activeforeground=palette["chip_fg"],
+                borderwidth=0,
+                highlightthickness=0,
+                font=("Segoe UI", self._scaled(10)),
             )
-            button.grid(row=0, column=index, sticky="ew", padx=2)
-
-    def _matching_words(self):
-        if not self.current_word:
-            return self.common_words[:8]
-        exact_prefix = [
-            word for word in self.common_words if word.startswith(self.current_word)
-        ]
-        return exact_prefix or [self.current_word]
+            button.grid(row=0, column=index, sticky="nsew", padx=3, pady=7)
 
     def _rebuild_keyboard_labels(self):
         for key, buttons in self.key_buttons.items():
             for button in buttons:
                 button.configure(text=self._key_label(key), style=self._style_for_key(key))
 
+    def _flash_key(self, key):
+        if not self.key_animation:
+            return
+        buttons = self.key_buttons.get(key)
+        if not buttons:
+            return
+        for button in buttons:
+            button.configure(style="Caps.TButton")
+        self.after(120, lambda: self._restore_key_style(key))
+
+    def _restore_key_style(self, key):
+        for button in self.key_buttons.get(key, []):
+            button.configure(style=self._style_for_key(key))
+
+    def _click_sound(self):
+        if not self.sound:
+            return
+        try:
+            winsound.MessageBeep(winsound.MB_OK)
+        except RuntimeError:
+            pass
+
 
 def main():
+    win.enable_dpi_awareness()
     app = VirtualKeyboard()
     app.mainloop()
 
